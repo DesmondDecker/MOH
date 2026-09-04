@@ -1,0 +1,146 @@
+name: CI
+
+# Runs on every push and PR against main — this is a GATE, not a
+# notification: a red run here should block merging, which requires
+# turning on branch protection with this workflow as a required check in
+# the repo's Settings (not something a workflow file can enable on its
+# own).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — gitleaks needs it to scan past commits, not just the current tree
+
+      # Catches exactly the kind of thing this repo has already leaked once
+      # (a live MongoDB connection string committed to .env.example) —
+      # scans every commit in the diff/history for credential-shaped
+      # strings before it ever reaches main.
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  backend:
+    name: Backend — lint, unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      # Unit tests only (tests/unit/) — pure logic, no database, so this
+      # step needs no network access and can never flake on a slow/blocked
+      # download. Integration tests (tests/integration/) are a separate,
+      # explicit job below since they need mongodb-memory-server to fetch a
+      # real MongoDB binary — see backend/tests/README.md for why that's
+      # kept separate rather than bundled in here.
+      - run: npm test
+
+      # Fails the build if any dependency has a HIGH or CRITICAL known
+      # vulnerability — a genuinely different failure mode than a lint
+      # error, so it's its own step rather than folded into lint.
+      - run: npm audit --audit-level=high
+        continue-on-error: true # informational for now; flip to blocking once the baseline is clean
+
+  backend-integration:
+    name: Backend — integration tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      # mongodb-memory-server downloads a real MongoDB binary on first run
+      # (cached afterward by the actions/cache step below across runs).
+      # GitHub-hosted runners have full outbound internet access, unlike
+      # the sandbox this pipeline was originally authored in — see
+      # backend/tests/README.md for the full explanation if this job ever
+      # needs to run somewhere more locked-down.
+      - name: Cache MongoDB binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}
+
+      - run: npm run test:integration
+
+  frontend:
+    name: Frontend — lint, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+
+      - run: npm audit --audit-level=high
+        continue-on-error: true
+
+  docker-build:
+    name: Docker — build both images
+    runs-on: ubuntu-latest
+    # Build-only, no push — this job exists to catch a broken Dockerfile
+    # before it merges (a missing file in .dockerignore, a build ARG typo,
+    # a dependency that installs fine locally but not in the alpine base
+    # image), not to publish an image anywhere. Wire up a real registry
+    # push (with a login step and image tag strategy) once there's an
+    # actual deployment target to push to — see DEPLOYMENT.md.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          build-args: |
+            VITE_API_BASE_URL=http://localhost:5000

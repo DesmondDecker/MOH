@@ -1,0 +1,17 @@
+{
+  "name": "MOH digital health and inventory platform",
+  "short_name": "MOH Registry",
+  "description": "CHW outreach visit recording, works offline",
+  "start_url": "/chw",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

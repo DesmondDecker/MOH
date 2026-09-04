@@ -1,0 +1,66 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # No port published to the host on purpose — only the backend service
+    # (on the same compose network) needs to reach MongoDB. Publishing
+    # 27017 here would expose the database directly to anything that can
+    # reach this host, which is exactly the kind of thing field-level
+    # encryption (services/encryptionService.js) is there to reduce the
+    # blast radius of, not something to casually widen back open.
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      # See "Secrets" below — this file is gitignored and must be created
+      # locally / injected by your deployment platform. backend/.env.example
+      # documents every key it needs.
+      - ./backend/.env
+    environment:
+      # Overrides whatever MONGO_URI might be set to in .env for local
+      # compose use specifically — always points at the `mongo` service on
+      # the compose network, never at a value meant for a different
+      # environment (e.g. a real Atlas URI a developer has in their local
+      # .env for running the backend outside Docker).
+      MONGO_URI: mongodb://mongo:27017/moh_registry
+    ports:
+      - "5000:5000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:5000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the static bundle at build time (see frontend/Dockerfile
+        # for why this can't be a runtime environment: entry instead). Points
+        # at the backend service's HOST-published port, since this is what
+        # the user's BROWSER calls, not another container on the compose
+        # network — the browser has no notion of the `backend` service name.
+        VITE_API_BASE_URL: http://localhost:5000
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+
+volumes:
+  mongo-data:

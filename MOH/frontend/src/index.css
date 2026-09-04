@@ -1,0 +1,164 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500..700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* WHITE THEME — clean, modern health-tech look: neutral slate ink on
+     near-white/white surfaces, single unified sans-serif (Inter) instead
+     of a serif display face, restrained functional color used only for
+     status/severity meaning (never decoration). Token NAMES are kept
+     identical to the previous parchment theme on purpose — every
+     component in this app was already built against these CSS custom
+     properties, so retheming here cascades everywhere for free without
+     touching 21+ page/component files individually. */
+  --color-ink: #0f172a;        /* slate-900 — primary text */
+  --color-ink-soft: #64748b;   /* slate-500 — secondary text, labels */
+  --color-canvas: #f8fafc;     /* slate-50 — page background */
+  --color-canvas-raised: #ffffff; /* cards, panels, inputs */
+  --color-border: #e2e8f0;     /* slate-200 — hairline borders */
+
+  --color-teal: #0d9488;       /* teal-600 — primary action/brand */
+  --color-teal-soft: #f0fdfa;  /* teal-50 */
+  --color-teal-strong: #0f766e; /* teal-700 — hover/active */
+
+  --color-clay: #d97706;       /* amber-600 — warning/threshold state */
+  --color-clay-soft: #fffbeb;  /* amber-50 */
+
+  --color-signal: #dc2626;     /* red-600 — critical/error state */
+  --color-signal-soft: #fef2f2; /* red-50 */
+
+  --color-moss: #16a34a;       /* green-600 — positive/success state */
+  --color-moss-soft: #f0fdf4;  /* green-50 */
+
+  /* font-display: headings — unified on Inter, no serif (the white-theme change). */
+  --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  /* font-kpi: a DELIBERATE, narrow exception — reserved only for large
+     dashboard KPI numerals (see components/ui.jsx <KpiStat>), never for
+     headings or body text. Fraunces' optical-size axis is pinned to its
+     display range (9..144 → we load 500..700 weight in that range) so it
+     reads as confident/editorial at large sizes without dragging serif
+     styling into the rest of the (intentionally sans) UI. */
+  --font-kpi: 'Fraunces', ui-serif, Georgia, serif;
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* High-contrast mode — a toggle for ward lighting (bright overhead
+   fluorescents, glare on cheap monitors) where the normal slate-on-white
+   theme's softer grays lose too much contrast to read quickly. Flips a
+   data attribute on <html> rather than a class so it composes cleanly
+   with Tailwind's utility-class approach — components never need to know
+   this mode exists, since it's the CSS VARIABLES that change underneath
+   them, identically to how the whole white-theme retheme works. */
+html[data-contrast='high'] {
+  --color-ink: #000000;
+  --color-ink-soft: #1e293b; /* slate-800 — still clearly darker than ink, but far more legible than the default slate-500 */
+  --color-border: #94a3b8; /* slate-400 — default border was too faint to read as a boundary at high contrast */
+  --color-teal-soft: #ffffff;
+  --color-clay-soft: #ffffff;
+  --color-signal-soft: #ffffff;
+  --color-moss-soft: #ffffff;
+}
+html[data-contrast='high'] :focus-visible {
+  outline-width: 3px;
+}
+
+/* Visible keyboard focus everywhere — not optional in a clinical tool. */
+:focus-visible {
+  outline: 2px solid var(--color-teal);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Signature element: a thin "vitals" pulse tick, used once, in the topbar
+   status strip — literal system heartbeat, not decoration. */
+@keyframes pulse-tick {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+.vitals-pulse {
+  animation: pulse-tick 2.4s ease-in-out infinite;
+}
+
+/* Soft page transitions (components/PageTransition.jsx) --------------- */
+
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-transition-enter {
+  animation: page-fade-in 180ms ease-out;
+}
+
+.page-transition-leaving {
+  animation: page-fade-in 120ms ease-out reverse forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-transition-enter,
+  .page-transition-leaving {
+    animation: none;
+  }
+}
+
+/* Native View Transitions API styling — only applies in browsers that
+   support it (Chrome/Edge, Safari 18+); browsers without it never create
+   these pseudo-elements, so this rule is simply inert there and the
+   .page-transition-enter fallback above takes over instead. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* Printable views (patient ID card, discharge summaries) render inside a
+   normal page but should print cleanly with no app chrome. Anything meant
+   to be printed carries data-print="only"; everything else is hidden via
+   the print media query below. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  [data-print='only'],
+  [data-print='only'] * {
+    visibility: visible;
+  }
+  [data-print='only'] {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+  }
+  @page {
+    margin: 0.5cm;
+  }
+}
